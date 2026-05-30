@@ -4,6 +4,7 @@ export function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   if (
     pathname.startsWith("/login") ||
+    pathname.startsWith("/signup") ||
     pathname.startsWith("/api/webhooks") ||
     pathname.startsWith("/api/inbound") ||
     pathname.startsWith("/_next")
