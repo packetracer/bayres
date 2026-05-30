@@ -1,0 +1,201 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  viewer
+}
+
+enum ReservationStatus {
+  pending
+  confirmed
+  declined
+  cancelled
+  completed
+  no_show
+  confirmed_pending_review
+  declined_pending_review
+}
+
+enum HistoryChangeType {
+  created
+  email_sent
+  email_opened
+  email_replied
+  status_changed
+  edited
+  cancelled
+  reminder_sent
+}
+
+enum EmailType {
+  confirmation_request
+  confirmation
+  cancellation
+  reminder
+}
+
+enum EmailDeliveryStatus {
+  queued
+  sent
+  delivered
+  opened
+  bounced
+  failed
+}
+
+enum EmailReplyStatus {
+  none
+  received
+  positive
+  negative
+  ambiguous
+  reviewed
+}
+
+enum ReplyClassification {
+  positive
+  negative
+  ambiguous
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique
+  name         String
+  passwordHash String
+  role         UserRole @default(viewer)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  reservations Reservation[] @relation("ReservationCreator")
+  history      ReservationHistory[]
+}
+
+model Guest {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  email     String
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  reservations Reservation[]
+
+  @@unique([email, phone])
+}
+
+model Reservation {
+  id               String            @id @default(uuid()) @db.Uuid
+  reservationCode  String            @unique
+  guestId          String?           @db.Uuid
+  guestName        String
+  guestEmail       String
+  guestPhone       String?
+  partySize        Int
+  reservationStart DateTime
+  reservationEnd   DateTime
+  status           ReservationStatus @default(pending)
+  notes            String?
+  internalOwner    String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  createdBy        String?           @db.Uuid
+
+  guest   Guest? @relation(fields: [guestId], references: [id])
+  creator User?  @relation("ReservationCreator", fields: [createdBy], references: [id])
+
+  history        ReservationHistory[]
+  emails         Email[]
+  inboundReplies InboundReply[]
+
+  @@index([reservationStart])
+  @@index([status])
+  @@index([guestEmail])
+}
+
+model ReservationHistory {
+  id            String            @id @default(uuid()) @db.Uuid
+  reservationId String            @db.Uuid
+  fieldName     String?
+  oldValue      String?
+  newValue      String?
+  changedBy     String?           @db.Uuid
+  changedAt     DateTime          @default(now())
+  changeType    HistoryChangeType
+  metadata      Json?
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  user        User?       @relation(fields: [changedBy], references: [id])
+
+  @@index([reservationId, changedAt])
+  @@index([changeType])
+}
+
+model Email {
+  id                String              @id @default(uuid()) @db.Uuid
+  reservationId     String              @db.Uuid
+  provider          String              @default("resend")
+  providerMessageId String?
+  recipientEmail    String
+  subject           String
+  body              String
+  type              EmailType
+  deliveryStatus    EmailDeliveryStatus @default(queued)
+  replyStatus       EmailReplyStatus    @default(none)
+  replyToken        String              @unique
+  sentAt            DateTime?
+  createdAt         DateTime            @default(now())
+
+  reservation    Reservation    @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  events         EmailEvent[]
+  inboundReplies InboundReply[]
+
+  @@index([reservationId])
+  @@index([providerMessageId])
+  @@index([replyToken])
+}
+
+model EmailEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  emailId       String?  @db.Uuid
+  reservationId String?  @db.Uuid
+  provider      String   @default("resend")
+  eventType     String
+  payload       Json
+  occurredAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  email Email? @relation(fields: [emailId], references: [id], onDelete: SetNull)
+
+  @@index([emailId])
+  @@index([reservationId])
+  @@index([eventType])
+}
+
+model InboundReply {
+  id             String              @id @default(uuid()) @db.Uuid
+  reservationId  String              @db.Uuid
+  emailId        String?             @db.Uuid
+  replyToken     String
+  fromEmail      String
+  subject        String?
+  rawBody        String
+  sanitizedBody  String
+  classification ReplyClassification @default(ambiguous)
+  reviewed       Boolean             @default(false)
+  createdAt      DateTime            @default(now())
+
+  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
+  email       Email?      @relation(fields: [emailId], references: [id], onDelete: SetNull)
+
+  @@index([reservationId])
+  @@index([replyToken])
+  @@index([reviewed, classification])
+}
