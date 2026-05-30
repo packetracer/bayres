@@ -1,7 +1,9 @@
 import Link from "next/link";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export default async function ReviewQueuePage() {
+  await requireAdmin();
   const replies = await prisma.inboundReply.findMany({
     where: { OR: [{ classification: "ambiguous" }, { reviewed: false }] },
     orderBy: { createdAt: "asc" },

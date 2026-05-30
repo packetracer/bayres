@@ -23,10 +23,17 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
           <nav className="flex flex-wrap gap-2 text-sm">
             <Link className="button" href="/">Dashboard</Link>
-            <Link className="button" href="/reservations">Reservations</Link>
-            <Link className="button" href="/reservations/new">New</Link>
-            <Link className="button" href="/emails">Email Activity</Link>
-            <Link className="button" href="/review">Review Queue</Link>
+            <Link className="button" href="/calendar">Calendar</Link>
+            {user.role === "admin" ? (
+              <>
+                <Link className="button" href="/reservations">Reservations</Link>
+                <Link className="button" href="/reservations/new">New</Link>
+                <Link className="button" href="/users">Users</Link>
+                <Link className="button" href="/audit">Audit Trail</Link>
+                <Link className="button" href="/emails">Email Activity</Link>
+                <Link className="button" href="/review">Review Queue</Link>
+              </>
+            ) : null}
             <form action={logout}>
               <button type="submit">Logout</button>
             </form>

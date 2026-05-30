@@ -15,7 +15,7 @@ type SessionPayload = {
 function secret() {
   const value = process.env.SESSION_SECRET;
   if (!value || value.length < 24) {
-    throw new Error("SESSION_SECRET must be set to a long random string.");
+    throw new Error("SESSION_SECRET_MISSING");
   }
   return value;
 }
@@ -60,17 +60,29 @@ export async function getSession() {
   const cookieStore = await cookies();
   const value = cookieStore.get(SESSION_COOKIE)?.value;
   if (!value) return null;
-  const [encoded, signature] = value.split(".");
-  if (!encoded || !signature || (await sign(encoded)) !== signature) return null;
-  const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
-  if (payload.exp < Date.now()) return null;
-  return payload;
+  try {
+    const [encoded, signature] = value.split(".");
+    if (!encoded || !signature || (await sign(encoded)) !== signature) return null;
+    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8")) as SessionPayload;
+    if (payload.exp < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
 }
 
 export async function requireUser() {
   const session = await getSession();
   if (!session) redirect("/login");
-  return session;
+  const user = await prisma.user.findUnique({
+    where: { id: session.userId },
+    select: { id: true, email: true, role: true }
+  });
+  if (!user) {
+    await clearSession();
+    redirect("/login");
+  }
+  return { ...session, userId: user.id, email: user.email, role: user.role };
 }
 
 export async function requireAdmin() {
@@ -86,5 +98,11 @@ export async function authenticate(email: string, password: string) {
   if (!user) return null;
   const ok = await bcrypt.compare(password, user.passwordHash);
   if (!ok) return null;
+  return user;
+}
+
+export async function currentUser() {
+  const session = await requireUser();
+  const user = await prisma.user.findUniqueOrThrow({ where: { id: session.userId } });
   return user;
 }

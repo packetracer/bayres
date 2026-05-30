@@ -18,6 +18,19 @@ export const loginSchema = z.object({
   password: z.string().min(1)
 });
 
+export const userRegistrationSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  email: z.string().email("A valid email is required"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+  role: z.enum(["admin", "viewer"])
+});
+
+export const bayHouseReservationSchema = z.object({
+  reservationDate: z.string().min(1, "Reservation date is required"),
+  partySize: z.coerce.number().int().min(1).max(50),
+  notes: z.string().optional()
+});
+
 export const inboundReplySchema = z.object({
   from: z.string().email().or(z.string().min(1)),
   subject: z.string().optional(),

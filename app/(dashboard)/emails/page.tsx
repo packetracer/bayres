@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { format } from "date-fns";
+import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export default async function EmailsPage() {
+  await requireAdmin();
   const emails = await prisma.email.findMany({
     orderBy: { createdAt: "desc" },
     take: 100,

@@ -3,11 +3,13 @@ import { notFound } from "next/navigation";
 import { format } from "date-fns";
 import type { EmailType, ReservationStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { requireUser } from "@/lib/auth";
 import { StatusBadge } from "@/components/status-badge";
 import { publicStatusLabels, reservationStatuses } from "@/lib/status";
-import { sendEmailAction, statusAction } from "../../actions";
+import { deleteReservationAction, sendEmailAction, statusAction } from "../../actions";
 
 export default async function ReservationDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const user = await requireUser();
   const { id } = await params;
   const reservation = await prisma.reservation.findUnique({
     where: { id },
@@ -18,6 +20,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
     }
   });
   if (!reservation) notFound();
+  const isAdmin = user.role === "admin";
 
   async function updateStatus(formData: FormData) {
     "use server";
@@ -38,7 +41,7 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           <p className="text-slate-500">{reservation.guestEmail} · {reservation.guestPhone || "No phone"}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link className="button" href={`/reservations/${id}/edit`}>Edit</Link>
+          {isAdmin ? <Link className="button" href={`/reservations/${id}/edit`}>Edit</Link> : null}
           <StatusBadge status={reservation.status} />
         </div>
       </div>
@@ -55,30 +58,43 @@ export default async function ReservationDetailPage({ params }: { params: Promis
           {reservation.notes ? <p className="mt-4 whitespace-pre-wrap rounded-md bg-slate-50 p-3 text-sm">{reservation.notes}</p> : null}
         </div>
 
-        <div className="card grid gap-4">
-          <form action={updateStatus} className="grid gap-2">
-            <label className="text-sm font-medium">Change status</label>
-            <select name="status" defaultValue={reservation.status}>
-              {reservationStatuses.map((status) => (
-                <option key={status} value={status}>{publicStatusLabels[status]}</option>
-              ))}
-            </select>
-            <button type="submit">Update status</button>
-          </form>
-          <form action={sendEmail} className="grid gap-2">
-            <label className="text-sm font-medium">Send email</label>
-            <select name="type" defaultValue="confirmation_request">
-              <option value="confirmation_request">Confirmation request</option>
-              <option value="confirmation">Confirmation</option>
-              <option value="cancellation">Cancellation</option>
-              <option value="reminder">Reminder</option>
-            </select>
-            <button type="submit">Send email</button>
-          </form>
-        </div>
+        {isAdmin ? (
+          <div className="card grid gap-4">
+            <form action={updateStatus} className="grid gap-2">
+              <label className="text-sm font-medium">Approve or change status</label>
+              <select name="status" defaultValue={reservation.status}>
+                {reservationStatuses.map((status) => (
+                  <option key={status} value={status}>{publicStatusLabels[status]}</option>
+                ))}
+              </select>
+              <button type="submit">Update status</button>
+            </form>
+            <form action={sendEmail} className="grid gap-2">
+              <label className="text-sm font-medium">Send email</label>
+              <select name="type" defaultValue="confirmation_request">
+                <option value="confirmation_request">Confirmation request</option>
+                <option value="confirmation">Confirmation</option>
+                <option value="cancellation">Cancellation</option>
+                <option value="reminder">Reminder</option>
+              </select>
+              <button type="submit">Send email</button>
+            </form>
+            <form action={deleteReservationAction.bind(null, id)} className="border-t border-slate-200 pt-4">
+              <button type="submit" className="w-full border-red-200 bg-red-50 text-red-700 hover:bg-red-100">
+                Delete reservation
+              </button>
+              <p className="mt-2 text-xs text-slate-500">This removes it from the active calendar by marking it cancelled and keeps the audit trail.</p>
+            </form>
+          </div>
+        ) : (
+          <div className="card">
+            <h2 className="font-semibold">Request status</h2>
+            <p className="mt-2 text-sm text-slate-500">An admin will review pending Bay House requests.</p>
+          </div>
+        )}
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-2">
+      {isAdmin ? <section className="grid gap-4 lg:grid-cols-2">
         <div className="card">
           <h2 className="mb-3 font-semibold">Email activity</h2>
           <div className="grid gap-3">
@@ -107,9 +123,9 @@ export default async function ReservationDetailPage({ params }: { params: Promis
             ))}
           </div>
         </div>
-      </section>
+      </section> : null}
 
-      {reservation.inboundReplies.length ? (
+      {isAdmin && reservation.inboundReplies.length ? (
         <section className="card">
           <h2 className="mb-3 font-semibold">Inbound replies</h2>
           <div className="grid gap-3">

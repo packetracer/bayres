@@ -3,6 +3,7 @@ import { addMinutes } from "date-fns";
 import { prisma } from "./prisma";
 import { generateReservationCode, nextSequenceFromCode } from "./reservation-code";
 import { addHistory, recordReservationDiff } from "./history";
+import { dateInputToReservationRange } from "./calendar";
 
 export async function allocateReservationCode(date = new Date()) {
   const year = date.getFullYear();
@@ -118,4 +119,35 @@ export async function setReservationStatus(id: string, status: ReservationStatus
     });
   }
   return after;
+}
+
+export async function createBayHouseReservationRequest(input: {
+  userId: string;
+  userName: string;
+  userEmail: string;
+  reservationDate: string;
+  partySize: number;
+  notes?: string | null;
+}) {
+  const { start, end } = dateInputToReservationRange(input.reservationDate);
+  const existing = await prisma.reservation.findFirst({
+    where: {
+      reservationStart: { gte: new Date(`${input.reservationDate}T00:00:00`), lt: new Date(`${input.reservationDate}T23:59:59`) },
+      status: { notIn: ["cancelled", "declined"] }
+    }
+  });
+  if (existing) {
+    throw new Error("That date already has a reservation request.");
+  }
+  return createReservation({
+    guestName: input.userName,
+    guestEmail: input.userEmail,
+    partySize: input.partySize,
+    reservationStart: start,
+    reservationEnd: end,
+    status: "pending",
+    notes: input.notes || null,
+    internalOwner: "Bay House",
+    createdBy: input.userId
+  });
 }

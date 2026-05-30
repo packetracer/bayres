@@ -2,8 +2,10 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { prisma } from "@/lib/prisma";
 import { StatusBadge } from "@/components/status-badge";
+import { requireAdmin } from "@/lib/auth";
 
 export default async function ReservationsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string }> }) {
+  await requireAdmin();
   const params = await searchParams;
   const reservations = await prisma.reservation.findMany({
     where: {
