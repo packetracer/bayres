@@ -7,8 +7,9 @@ import { currentUser, requireAdmin, requireUser } from "@/lib/auth";
 import { bayHouseReservationSchema, reservationFormSchema, userRegistrationSchema } from "@/lib/validation";
 import { createBayHouseReservationRequest, createReservation, setReservationStatus, updateReservation } from "@/lib/reservations";
 import { sendReservationEmail } from "@/lib/email";
-import { createUser, setUserRole } from "@/lib/users";
+import { approveUser, createUser, setUserRole } from "@/lib/users";
 import { recordAuditEvent } from "@/lib/audit";
+import { prisma } from "@/lib/prisma";
 
 function parsedReservation(formData: FormData) {
   const parsed = reservationFormSchema.parse(Object.fromEntries(formData));
@@ -98,7 +99,7 @@ export async function sendEmailAction(id: string, type: "confirmation_request" |
 export async function createUserAction(formData: FormData) {
   const admin = await requireAdmin();
   const parsed = userRegistrationSchema.parse(Object.fromEntries(formData));
-  const user = await createUser({ ...parsed, role: parsed.role as UserRole });
+  const user = await createUser({ ...parsed, role: parsed.role as UserRole, approvedAt: new Date() });
   await recordAuditEvent({
     actorId: admin.userId,
     action: "user.created",
@@ -109,6 +110,52 @@ export async function createUserAction(formData: FormData) {
   revalidatePath("/users");
   revalidatePath("/audit");
   redirect("/users");
+}
+
+export async function approveUserAction(userId: string) {
+  const admin = await requireAdmin();
+  const user = await approveUser(userId);
+  await recordAuditEvent({
+    actorId: admin.userId,
+    action: "user.approved",
+    targetType: "user",
+    targetId: user.id,
+    summary: `Approved guest account for ${user.name}`
+  });
+  revalidatePath("/users");
+  revalidatePath("/audit");
+}
+
+export async function approveUserAndRequestsAction(userId: string) {
+  const admin = await requireAdmin();
+  const user = await approveUser(userId);
+  await recordAuditEvent({
+    actorId: admin.userId,
+    action: "user.approved",
+    targetType: "user",
+    targetId: user.id,
+    summary: `Approved guest account for ${user.name}`
+  });
+
+  const pendingReservations = await prisma.reservation.findMany({
+    where: { createdBy: userId, status: "pending" },
+    select: { id: true }
+  });
+  for (const reservation of pendingReservations) {
+    const updated = await setReservationStatus(reservation.id, "confirmed", admin.userId);
+    await recordAuditEvent({
+      actorId: admin.userId,
+      action: "reservation.status_changed",
+      targetType: "reservation",
+      targetId: updated.id,
+      summary: `Confirmed ${updated.reservationCode} while approving ${user.name}`
+    });
+  }
+
+  revalidatePath("/");
+  revalidatePath("/calendar");
+  revalidatePath("/users");
+  revalidatePath("/audit");
 }
 
 export async function setUserRoleAction(userId: string, role: UserRole) {
@@ -130,6 +177,9 @@ export async function setUserRoleAction(userId: string, role: UserRole) {
 
 export async function createBayHouseReservationAction(formData: FormData) {
   const user = await currentUser();
+  if (user.role !== "admin" && !user.approvedAt) {
+    redirect("/calendar?approval=pending");
+  }
   const parsed = bayHouseReservationSchema.parse(Object.fromEntries(formData));
   const reservation = await createBayHouseReservationRequest({
     userId: user.id,

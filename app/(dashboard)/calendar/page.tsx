@@ -1,15 +1,16 @@
 import Link from "next/link";
 import { format, isSameMonth } from "date-fns";
-import { requireUser } from "@/lib/auth";
+import { currentUser } from "@/lib/auth";
 import { calendarMonth, reservationDateKey } from "@/lib/calendar";
 import { prisma } from "@/lib/prisma";
 import { StatusBadge } from "@/components/status-badge";
 import { createBayHouseReservationAction } from "../actions";
 
-export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ month?: string }> }) {
-  const user = await requireUser();
+export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ approval?: string; month?: string }> }) {
+  const user = await currentUser();
   const params = await searchParams;
   const month = calendarMonth(params.month);
+  const isPendingApproval = user.role !== "admin" && !user.approvedAt;
   const reservations = await prisma.reservation.findMany({
     where: {
       reservationStart: { gte: month.rangeStart, lt: month.rangeEnd },
@@ -39,6 +40,11 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
 
       <section className="card grid gap-4">
         <h2 className="font-semibold">Request a date</h2>
+        {params.approval === "pending" || isPendingApproval ? (
+          <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-800">
+            Your account is waiting for admin approval. You can browse the calendar, but an admin must approve your account before you can request a reservation.
+          </p>
+        ) : null}
         <form action={createBayHouseReservationAction} className="grid gap-3 md:grid-cols-[1fr_140px_1.5fr_auto]">
           <label className="grid gap-1 text-sm font-medium">
             Date
@@ -100,7 +106,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
       </section>
 
       {user.role !== "admin" ? (
-        <p className="text-sm text-slate-500">Requests stay pending until an admin approves them.</p>
+        <p className="text-sm text-slate-500">Approved guest accounts can submit requests. Requests stay pending until an admin approves the reservation.</p>
       ) : null}
     </div>
   );

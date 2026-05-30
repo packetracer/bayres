@@ -71,6 +71,7 @@ model User {
   name         String
   passwordHash String
   role         UserRole @default(viewer)
+  approvedAt   DateTime?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
